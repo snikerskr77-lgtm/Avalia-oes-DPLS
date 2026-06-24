@@ -1,24 +1,62 @@
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required");
-}
 
 const globalForDb = globalThis as typeof globalThis & {
   __arenaNextJsPostgresqlPool?: Pool;
+  __arenaNextJsPostgresqlDrizzle?: NodePgDatabase;
 };
 
-export const pool =
-  globalForDb.__arenaNextJsPostgresqlPool ??
-  new Pool({
-    connectionString: databaseUrl,
-  });
+function getPool(): Pool {
+  if (globalForDb.__arenaNextJsPostgresqlPool) {
+    return globalForDb.__arenaNextJsPostgresqlPool;
+  }
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__arenaNextJsPostgresqlPool = pool;
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required");
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForDb.__arenaNextJsPostgresqlPool = pool;
+  }
+
+  return pool;
 }
 
-export const db = drizzle(pool);
+function getDb(): NodePgDatabase {
+  if (globalForDb.__arenaNextJsPostgresqlDrizzle) {
+    return globalForDb.__arenaNextJsPostgresqlDrizzle;
+  }
+
+  const instance = drizzle(getPool());
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForDb.__arenaNextJsPostgresqlDrizzle = instance;
+  }
+
+  return instance;
+}
+
+export const pool = new Proxy({} as Pool, {
+  get(_target, prop, receiver) {
+    const realPool = getPool();
+    const value = Reflect.get(realPool, prop, receiver);
+    if (typeof value === "function") {
+      return value.bind(realPool);
+    }
+    return value;
+  },
+});
+
+export const db = new Proxy({} as NodePgDatabase, {
+  get(_target, prop, receiver) {
+    const realDb = getDb();
+    const value = Reflect.get(realDb, prop, receiver);
+    if (typeof value === "function") {
+      return value.bind(realDb);
+    }
+    return value;
+  },
+});
