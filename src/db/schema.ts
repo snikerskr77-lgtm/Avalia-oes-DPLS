@@ -1,47 +1,69 @@
 import {
   pgTable,
-  serial,
   text,
   timestamp,
+  integer,
+  date,
   varchar,
-  pgEnum,
+  boolean,
+  uuid,
 } from "drizzle-orm/pg-core";
 
-export const ratingEnum = pgEnum("rating", [
-  "cumpre",
-  "cumpre_parcialmente",
-  "nao_cumpre",
-]);
-
-export const agents = pgTable("agents", {
-  id: serial("id").primaryKey(),
+// Employees table
+export const employees = pgTable("employees", {
+  id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 255 }).notNull(),
-  rank: varchar("rank", { length: 100 }),
-  unit: varchar("unit", { length: 255 }),
+  email: varchar("email", { length: 255 }).unique(),
+  department: varchar("department", { length: 100 }),
+  position: varchar("position", { length: 100 }),
+  isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const evaluations = pgTable("evaluations", {
-  id: serial("id").primaryKey(),
-  agentId: serial("agent_id")
-    .references(() => agents.id)
+// Time entries table
+export const timeEntries = pgTable("time_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: uuid("employee_id")
+    .references(() => employees.id, { onDelete: "cascade" })
     .notNull(),
-  evaluatorName: varchar("evaluator_name", { length: 255 }).notNull(),
-  evaluationDate: timestamp("evaluation_date").defaultNow().notNull(),
+  date: date("date").notNull(),
+  entryTime: varchar("entry_time", { length: 5 }).notNull(), // HH:MM format
+  exitTime: varchar("exit_time", { length: 5 }), // HH:MM format, nullable for ongoing
+  breakStart: varchar("break_start", { length: 5 }), // HH:MM format (first break start, legacy)
+  breakEnd: varchar("break_end", { length: 5 }), // HH:MM format (first break end, legacy)
+  breaksData: text("breaks_data"), // JSON array de horários de pausa completos: ["HH:MM","HH:MM","HH:MM","HH:MM"]
+  totalMinutes: integer("total_minutes").default(0),
+  notes: text("notes"),
+  alerts: text("alerts"), // JSON array of alert strings
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
-  // Criteria ratings
-  modusOperandi: ratingEnum("modus_operandi").notNull(),
-  elaborarRelatoriosCAD: ratingEnum("elaborar_relatorios_cad").notNull(),
-  cumprirOrdens: ratingEnum("cumprir_ordens").notNull(),
-  humildadeDuvidas: ratingEnum("humildade_duvidas").notNull(),
-
-  // Observations
-  observations: text("observations"),
-
+// Absences table
+export const absences = pgTable("absences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: uuid("employee_id")
+    .references(() => employees.id, { onDelete: "cascade" })
+    .notNull(),
+  date: date("date").notNull(),
+  type: varchar("type", { length: 50 }).notNull(), // 'unjustified', 'justified', 'vacation', 'sick'
+  reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export type Agent = typeof agents.$inferSelect;
-export type NewAgent = typeof agents.$inferInsert;
-export type Evaluation = typeof evaluations.$inferSelect;
-export type NewEvaluation = typeof evaluations.$inferInsert;
+// Settings table for Discord configuration
+export const settings = pgTable("settings", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Type exports
+export type Employee = typeof employees.$inferSelect;
+export type NewEmployee = typeof employees.$inferInsert;
+export type TimeEntry = typeof timeEntries.$inferSelect;
+export type NewTimeEntry = typeof timeEntries.$inferInsert;
+export type Absence = typeof absences.$inferSelect;
+export type NewAbsence = typeof absences.$inferInsert;
+export type Setting = typeof settings.$inferSelect;

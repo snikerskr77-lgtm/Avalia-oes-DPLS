@@ -1,51 +1,38 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import "./globals.css";
+import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "Sistema de Avaliações de Agentes",
-  description: "Plataforma de avaliação de desempenho de agentes",
+  title: "TimeTrack - Sistema de Ponto",
+  description: "Sistema profissional de gestão de ponto e horas de trabalho",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="pt">
-      <body className="bg-slate-50 text-slate-900 antialiased min-h-screen">
-        <nav className="bg-slate-900 text-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              <a href="/" className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-amber-500 rounded-lg flex items-center justify-center font-bold text-slate-900 text-lg">
-                  A
-                </div>
-                <span className="font-bold text-lg tracking-tight">
-                  Avaliações de Agentes
-                </span>
-              </a>
-              <div className="flex gap-1">
-                <a
-                  href="/"
-                  className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
-                  Dashboard
-                </a>
-                <a
-                  href="/avaliar"
-                  className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
-                  Nova Avaliação
-                </a>
-                <a
-                  href="/agentes"
-                  className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
-                  Agentes
-                </a>
-              </div>
+      <body className="min-h-screen bg-gradient-to-br from-blue-950/95 via-slate-900/98 to-neutral-950 text-white font-sans">
+        {/* Grid background */}
+        <div className="fixed inset-0 bg-grid pointer-events-none opacity-40 z-0" />
+
+        {/* Top accent bar */}
+        <div className="fixed top-0 left-0 right-0 h-1 flex z-50">
+          <div className="flex-1 bg-blue-600 animate-pulse-bar" />
+          <div className="w-12 bg-white/20 animate-ping-slow absolute left-1/2 -translate-x-1/2 h-1" />
+          <div className="flex-1 bg-red-600 animate-pulse-bar" style={{ animationDelay: '0.5s' }} />
+        </div>
+
+        <div className="relative z-10 flex min-h-screen">
+          <Sidebar />
+          <main className="flex-1 lg:ml-0">
+            <div className="p-4 lg:p-8 pt-6 lg:pt-10">
+              {children}
             </div>
-          </div>
-        </nav>
-        <main>{children}</main>
+          </main>
+        </div>
       </body>
     </html>
   );

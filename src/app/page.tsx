@@ -1,180 +1,364 @@
-import { db } from "@/db";
-import { evaluations, agents } from "@/db/schema";
-import { desc, eq, count } from "drizzle-orm";
-import Link from "next/link";
+'use client';
 
-function RatingBadge({ rating }: { rating: string }) {
-  const labels: Record<string, string> = {
-    cumpre: "Cumpre",
-    cumpre_parcialmente: "Cumpre Parcialmente",
-    nao_cumpre: "Não Cumpre",
+import { useEffect, useState } from 'react';
+import { Users, Clock, Calendar, TrendingUp, Trash2, AlertTriangle } from 'lucide-react';
+import StatsCard from '@/components/StatsCard';
+import Button from '@/components/Button';
+import { formatMinutesToHours } from '@/lib/utils';
+
+interface DashboardData {
+  stats: {
+    totalEmployees: number;
+    thisWeekHours: string;
+    thisWeekMinutes: number;
+    lastWeekMinutes: number;
+    percentChange: number;
+    todayEntries: number;
+    totalEntries: number;
   };
-
-  const colors: Record<string, string> = {
-    cumpre: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    cumpre_parcialmente: "bg-amber-100 text-amber-800 border-amber-200",
-    nao_cumpre: "bg-red-100 text-red-800 border-red-200",
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${colors[rating] || "bg-gray-100 text-gray-800"}`}
-    >
-      {labels[rating] || rating}
-    </span>
-  );
+  todayActivity: Array<{
+    employeeId: string;
+    employeeName: string;
+    entryTime: string;
+    exitTime: string | null;
+    totalMinutes: number;
+    totalFormatted: string;
+  }>;
+  chartData: Array<{
+    day: string;
+    date: string;
+    hours: number;
+  }>;
+  topEmployees: Array<{
+    name: string;
+    hours: string;
+    minutes: number;
+  }>;
+  weekRange: string;
 }
 
-export const dynamic = "force-dynamic";
+export default function DashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearResult, setClearResult] = useState<{ success: boolean; message: string; stats?: { registosEliminados: number; faltasEliminadas: number; funcionariosEliminados: number } } | null>(null);
+  const [confirmText, setConfirmText] = useState('');
 
-export default async function DashboardPage() {
-  const recentEvaluations = await db
-    .select({
-      id: evaluations.id,
-      agentName: agents.name,
-      agentRank: agents.rank,
-      evaluatorName: evaluations.evaluatorName,
-      evaluationDate: evaluations.evaluationDate,
-      modusOperandi: evaluations.modusOperandi,
-      elaborarRelatoriosCAD: evaluations.elaborarRelatoriosCAD,
-      cumprirOrdens: evaluations.cumprirOrdens,
-      humildadeDuvidas: evaluations.humildadeDuvidas,
-      observations: evaluations.observations,
-    })
-    .from(evaluations)
-    .innerJoin(agents, eq(evaluations.agentId, agents.id))
-    .orderBy(desc(evaluations.createdAt))
-    .limit(20);
+  useEffect(() => {
+    fetchDashboard();
+  }, []);
 
-  const [agentCount] = await db.select({ value: count() }).from(agents);
-  const [evalCount] = await db.select({ value: count() }).from(evaluations);
+  const fetchDashboard = async () => {
+    try {
+      const res = await fetch('/api/dashboard');
+      const json = await res.json();
+      setData(json);
+    } catch (error) {
+      console.error('Failed to fetch dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  const maxHours = Math.max(...(data?.chartData?.map(d => d.hours) || [1]), 1);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-slate-500">
-          Visão geral das avaliações de agentes
-        </p>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-              <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Total de Agentes</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {agentCount?.value ?? 0}
-              </p>
-            </div>
-          </div>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-extrabold tracking-widest uppercase font-mono">Dashboard</h1>
+          <p className="text-xs text-gray-400 font-mono mt-1">
+            Semana {data?.weekRange || ''}
+          </p>
         </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-              <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Total de Avaliações</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {evalCount?.value ?? 0}
-              </p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-lg text-xs font-bold font-mono">
+            <Calendar className="w-4 h-4" />
+            <span>SEMANA ATUAL</span>
           </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
-              <svg className="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Nova Avaliação</p>
-              <Link
-                href="/avaliar"
-                className="text-amber-600 font-semibold hover:text-amber-700 text-sm"
-              >
-                Criar agora →
-              </Link>
-            </div>
-          </div>
+          <Button variant="danger" size="sm" onClick={() => { setShowClearModal(true); setClearResult(null); setConfirmText(''); }} icon={<Trash2 className="w-3.5 h-3.5" />}>
+            Limpar Tudo
+          </Button>
         </div>
       </div>
 
-      {/* Recent Evaluations */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-        <div className="px-6 py-4 border-b border-slate-200">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Avaliações Recentes
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard
+          title="Total Funcionários"
+          value={data?.stats.totalEmployees || 0}
+          subtitle={`${data?.stats.totalEmployees || 0} ativos`}
+          icon={<Users className="w-5 h-5" />}
+          color="blue"
+        />
+        <StatsCard
+          title="Horas esta Semana"
+          value={data?.stats.thisWeekHours || '0h00m'}
+          subtitle={`${data?.stats.totalEntries || 0} registos`}
+          change={data?.stats.percentChange}
+          icon={<Clock className="w-5 h-5" />}
+          color="green"
+        />
+        <StatsCard
+          title="Registos Hoje"
+          value={data?.stats.todayEntries || 0}
+          subtitle="Picagens de ponto"
+          icon={<Calendar className="w-5 h-5" />}
+          color="amber"
+        />
+        <StatsCard
+          title="Performance"
+          value={data?.stats.percentChange ? `${data.stats.percentChange > 0 ? '+' : ''}${data.stats.percentChange}%` : '0%'}
+          subtitle="vs semana anterior"
+          icon={<TrendingUp className="w-5 h-5" />}
+          color="red"
+        />
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Weekly Chart */}
+        <div className="lg:col-span-2 glass-card rounded-xl p-5 neon-blue">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-6">
+            Horas por Dia
           </h2>
+          <div className="flex items-end justify-between gap-3 h-48">
+            {data?.chartData?.map((item, index) => (
+              <div key={index} className="flex-1 flex flex-col items-center gap-2">
+                <div className="w-full flex flex-col items-center justify-end h-40">
+                  <span className="text-[10px] font-bold font-mono text-gray-500 mb-1">
+                    {item.hours}h
+                  </span>
+                  <div
+                    className="w-full max-w-[36px] bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-md transition-all duration-500"
+                    style={{ height: `${(item.hours / maxHours) * 100}%`, minHeight: item.hours > 0 ? '6px' : '0' }}
+                  />
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-bold text-gray-300">{item.day}</p>
+                  <p className="text-[10px] text-gray-600 font-mono">{item.date}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {recentEvaluations.length === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <svg className="w-16 h-16 text-slate-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            <p className="text-slate-500 mb-4">
-              Ainda não existem avaliações registadas.
-            </p>
-            <Link
-              href="/avaliar"
-              className="inline-flex items-center px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium text-sm transition-colors"
-            >
-              Criar Primeira Avaliação
-            </Link>
+        {/* Top Employees */}
+        <div className="glass-card rounded-xl p-5 neon-amber">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-6">
+            Top Funcionários
+          </h2>
+          <div className="space-y-4">
+            {data?.topEmployees?.length === 0 ? (
+              <p className="text-xs text-gray-600 text-center py-8 font-mono">
+                Sem dados esta semana
+              </p>
+            ) : (
+              data?.topEmployees?.map((emp, index) => (
+                <div key={index} className="flex items-center gap-3">
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-extrabold border ${
+                      index === 0 ? 'bg-amber-500/20 border-amber-500/30 text-amber-400' :
+                      index === 1 ? 'bg-gray-500/20 border-gray-500/30 text-gray-400' :
+                      index === 2 ? 'bg-orange-500/20 border-orange-500/30 text-orange-400' :
+                      'bg-neutral-800 border-white/10 text-gray-500'
+                    }`}
+                  >
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-gray-300 truncate">
+                      {emp.name}
+                    </p>
+                    <div className="w-full bg-white/5 rounded-full h-1 mt-1">
+                      <div
+                        className="bg-gradient-to-r from-amber-500 to-amber-400 h-1 rounded-full transition-all duration-500"
+                        style={{ width: `${(emp.minutes / (data.topEmployees[0]?.minutes || 1)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold font-mono text-amber-400">{emp.hours}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Today's Activity */}
+      <div className="glass-card rounded-xl p-5 neon-green">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400">
+            Atividade de Hoje
+          </h2>
+          <span className="px-2 py-1 bg-green-500/10 text-green-400 border border-green-500/30 rounded-lg text-[10px] font-bold font-mono">
+            {data?.todayActivity?.length || 0} REGISTOS
+          </span>
+        </div>
+        
+        {data?.todayActivity?.length === 0 ? (
+          <div className="text-center py-10">
+            <Clock className="w-10 h-10 text-gray-700 mx-auto mb-3" />
+            <p className="text-sm text-gray-500">Nenhum registo de ponto hoje</p>
+            <p className="text-xs text-gray-600 mt-1 font-mono">Os registos aparecerão aqui</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {recentEvaluations.map((ev) => (
-              <Link
-                key={ev.id}
-                href={`/avaliacao/${ev.id}`}
-                className="block px-6 py-4 hover:bg-slate-50 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-slate-900">
-                      {ev.agentRank ? `${ev.agentRank} ` : ""}
-                      {ev.agentName}
-                    </h3>
-                    <p className="text-sm text-slate-500">
-                      Avaliado por {ev.evaluatorName} •{" "}
-                      {new Date(ev.evaluationDate).toLocaleDateString("pt-PT")}
-                    </p>
-                  </div>
-                  <svg className="w-5 h-5 text-slate-400 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <RatingBadge rating={ev.modusOperandi} />
-                  <RatingBadge rating={ev.elaborarRelatoriosCAD} />
-                  <RatingBadge rating={ev.cumprirOrdens} />
-                  <RatingBadge rating={ev.humildadeDuvidas} />
-                </div>
-                {ev.observations && (
-                  <p className="mt-2 text-sm text-slate-600 line-clamp-2">
-                    {ev.observations}
-                  </p>
-                )}
-              </Link>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-white/5">
+                  <th className="text-left py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Funcionário</th>
+                  <th className="text-left py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Entrada</th>
+                  <th className="text-left py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Saída</th>
+                  <th className="text-left py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Total</th>
+                  <th className="text-left py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.todayActivity?.map((entry, index) => (
+                  <tr key={index} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 text-[10px] font-bold">
+                          {entry.employeeName?.charAt(0) || '?'}
+                        </div>
+                        <span className="text-sm font-bold text-gray-300">{entry.employeeName}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm font-mono text-green-400">{entry.entryTime}</td>
+                    <td className="py-3 px-4 text-sm font-mono text-red-400">{entry.exitTime || '--:--'}</td>
+                    <td className="py-3 px-4 text-sm font-mono font-bold text-amber-400">{entry.totalFormatted}</td>
+                    <td className="py-3 px-4">
+                      {entry.exitTime ? (
+                        <span className="px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/30 rounded text-[10px] font-bold">
+                          COMPLETO
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded text-[10px] font-bold">
+                          EM CURSO
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
+
+      {/* Modal Limpar Tudo */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowClearModal(false)} />
+          <div className="relative w-full max-w-md mx-4 glass-card rounded-xl neon-red overflow-hidden">
+            {/* Header */}
+            <div className="p-5 border-b border-white/10 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-extrabold uppercase tracking-widest text-red-400">Limpar Todos os Dados</h2>
+                <p className="text-[10px] text-gray-500 font-mono">Esta ação é irreversível</p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 space-y-4">
+              {clearResult ? (
+                <div className={`p-4 rounded-lg border ${clearResult.success ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                  <p className={`text-xs font-bold ${clearResult.success ? 'text-green-400' : 'text-red-400'}`}>{clearResult.message}</p>
+                  {clearResult.stats && (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      <div className="bg-black/30 rounded p-2 text-center border border-white/5">
+                        <p className="text-lg font-extrabold font-mono text-red-400">{clearResult.stats.registosEliminados}</p>
+                        <p className="text-[10px] text-gray-500 uppercase">Registos</p>
+                      </div>
+                      <div className="bg-black/30 rounded p-2 text-center border border-white/5">
+                        <p className="text-lg font-extrabold font-mono text-red-400">{clearResult.stats.faltasEliminadas}</p>
+                        <p className="text-[10px] text-gray-500 uppercase">Faltas</p>
+                      </div>
+                      <div className="bg-black/30 rounded p-2 text-center border border-white/5">
+                        <p className="text-lg font-extrabold font-mono text-red-400">{clearResult.stats.funcionariosEliminados}</p>
+                        <p className="text-[10px] text-gray-500 uppercase">Funcionários</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-4 flex justify-end">
+                    <Button variant="secondary" onClick={() => { setShowClearModal(false); if (clearResult.success) fetchDashboard(); }}>Fechar</Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+                    <p className="text-xs text-red-400 font-mono leading-relaxed">
+                      <strong>ATENÇÃO:</strong> Isto vai eliminar permanentemente:
+                    </p>
+                    <ul className="mt-2 space-y-1 text-xs text-red-400/80 font-mono">
+                      <li>• Todos os registos de picagem de ponto</li>
+                      <li>• Todas as faltas registadas</li>
+                      <li>• Todos os funcionários</li>
+                    </ul>
+                    <p className="mt-2 text-xs text-red-400/60 font-mono">
+                      Esta ação <strong>NÃO pode ser desfeita</strong>.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                      Escreva ELIMINAR para confirmar
+                    </label>
+                    <input
+                      type="text"
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                      placeholder="ELIMINAR"
+                      className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-red-500/50 placeholder:text-gray-700"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <Button variant="secondary" onClick={() => setShowClearModal(false)}>Cancelar</Button>
+                    <Button
+                      variant="danger"
+                      loading={clearing}
+                      disabled={confirmText !== 'ELIMINAR'}
+                      icon={<Trash2 className="w-4 h-4" />}
+                      onClick={async () => {
+                        setClearing(true);
+                        try {
+                          const res = await fetch('/api/clear-all', { method: 'POST' });
+                          const d = await res.json();
+                          setClearResult(d);
+                          if (!d.success) {
+                            setClearResult({ success: false, message: d.error || 'Erro ao limpar dados' });
+                          }
+                        } catch {
+                          setClearResult({ success: false, message: 'Erro de conexão — verifique se o servidor está online' });
+                        } finally {
+                          setClearing(false);
+                        }
+                      }}
+                    >
+                      Eliminar Tudo
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

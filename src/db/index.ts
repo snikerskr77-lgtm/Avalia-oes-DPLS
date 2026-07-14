@@ -1,62 +1,44 @@
-import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleNode } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleNeon } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
 import { Pool } from "pg";
 
-const globalForDb = globalThis as typeof globalThis & {
-  __arenaNextJsPostgresqlPool?: Pool;
-  __arenaNextJsPostgresqlDrizzle?: NodePgDatabase;
-};
+const databaseUrl = process.env.DATABASE_URL;
 
-function getPool(): Pool {
-  if (globalForDb.__arenaNextJsPostgresqlPool) {
-    return globalForDb.__arenaNextJsPostgresqlPool;
-  }
-
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required");
-  }
-
-  const pool = new Pool({ connectionString: databaseUrl });
-
-  if (process.env.NODE_ENV !== "production") {
-    globalForDb.__arenaNextJsPostgresqlPool = pool;
-  }
-
-  return pool;
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required");
 }
 
-function getDb(): NodePgDatabase {
-  if (globalForDb.__arenaNextJsPostgresqlDrizzle) {
-    return globalForDb.__arenaNextJsPostgresqlDrizzle;
+// Deteta se estamos na Vercel (serverless) ou local
+// Na Vercel usa driver serverless do Neon via HTTP
+// Localmente usa pg Pool normal (TCP)
+const isServerless =
+  !!process.env.VERCEL ||
+  !!process.env.VERCEL_ENV ||
+  databaseUrl.includes("neon.tech") ||
+  databaseUrl.includes("supabase.co");
+
+function createDb() {
+  if (isServerless) {
+    // Neon serverless HTTP driver — funciona na Vercel Edge e Serverless
+    const sql = neon(databaseUrl!);
+    return drizzleNeon(sql);
+  } else {
+    // Node.js pg Pool — funciona localmente
+    const globalForDb = globalThis as typeof globalThis & {
+      __pool?: Pool;
+    };
+
+    const pool =
+      globalForDb.__pool ??
+      new Pool({ connectionString: databaseUrl });
+
+    if (process.env.NODE_ENV !== "production") {
+      globalForDb.__pool = pool;
+    }
+
+    return drizzleNode(pool);
   }
-
-  const instance = drizzle(getPool());
-
-  if (process.env.NODE_ENV !== "production") {
-    globalForDb.__arenaNextJsPostgresqlDrizzle = instance;
-  }
-
-  return instance;
 }
 
-export const pool = new Proxy({} as Pool, {
-  get(_target, prop, receiver) {
-    const realPool = getPool();
-    const value = Reflect.get(realPool, prop, receiver);
-    if (typeof value === "function") {
-      return value.bind(realPool);
-    }
-    return value;
-  },
-});
-
-export const db = new Proxy({} as NodePgDatabase, {
-  get(_target, prop, receiver) {
-    const realDb = getDb();
-    const value = Reflect.get(realDb, prop, receiver);
-    if (typeof value === "function") {
-      return value.bind(realDb);
-    }
-    return value;
-  },
-});
+export const db = createDb();
